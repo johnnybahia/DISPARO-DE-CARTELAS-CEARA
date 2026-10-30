@@ -62,7 +62,7 @@ function garantirAbas_() {
   });
 
   const abaEmails = ss.getSheetByName('Emails');
-  abaEmails.getRange('A1').setNote('Nome do cliente ou início do nome. Ex.: DAKOTA atende DAKOTA RUSSAS, DAKOTA IGUATU e filiais futuras.\nO destinatário recebe o formulário; a cópia recebe só a lista de itens e as respostas.');
+  abaEmails.getRange('A1').setNote('Nome do cliente ou início do nome. Ex.: DAKOTA atende DAKOTA RUSSAS, DAKOTA IGUATU e filiais futuras.\nO destinatário recebe o formulário; a cópia recebe só a lista de itens e as respostas.\nCópia com Cliente vazio recebe de todos os clientes.');
   abaEmails.getRange('D2:D1000').setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(['Destinatário', 'Cópia'], true).setAllowInvalid(false).build()
   );
@@ -217,11 +217,11 @@ function definirSenhaUsuario() {
   if (pu.getSelectedButton() !== ui.Button.OK) return;
   const usuario = pu.getResponseText().trim();
   if (!usuario) return;
-  const ps = ui.prompt('Senha', 'Nova senha para "' + usuario + '" (mínimo 8 caracteres):', ui.ButtonSet.OK_CANCEL);
+  const ps = ui.prompt('Senha', 'Nova senha para "' + usuario + '" (mínimo 6 caracteres):', ui.ButtonSet.OK_CANCEL);
   if (ps.getSelectedButton() !== ui.Button.OK) return;
   const senha = ps.getResponseText();
-  if (senha.length < 8) {
-    ui.alert('A senha precisa ter pelo menos 8 caracteres.');
+  if (senha.length < 6) {
+    ui.alert('A senha precisa ter pelo menos 6 caracteres.');
     return;
   }
 
@@ -403,8 +403,8 @@ function lerEmails_(avisos) {
     const onde = `Aba Emails, linha ${n + 2}: `;
     const tipoN = normalizar_(r[3]);
     const tipo = (tipoN === '' || tipoN.indexOf('DEST') === 0) ? 'D' : (tipoN.indexOf('COP') === 0 || /^CC/.test(tipoN)) ? 'C' : null;
-    if (!cliente) { aviso.push(onde + 'Cliente vazio (destinatários e cópias são por cliente). Linha ignorada.'); return; }
     if (!tipo) { aviso.push(`${onde}Tipo "${r[3]}" não reconhecido. Use Destinatário ou Cópia. Linha ignorada.`); return; }
+    if (!cliente && tipo !== 'C') { aviso.push(onde + 'Destinatário precisa de Cliente. Só a Cópia pode ficar sem cliente (recebe de todos). Linha ignorada.'); return; }
     if (!emails.length) { aviso.push(onde + 'sem e-mail. Linha ignorada.'); return; }
     emails.forEach(email => {
       if (EMAIL_RE.test(email)) lista.push({ chave: normalizar_(cliente), nome: cliente, email, tipo });
@@ -416,17 +416,25 @@ function lerEmails_(avisos) {
 
 function mapaClientes_(avisos) {
   const mapa = new Map();
+  const globais = [];
+  const incluir = (lista, email) => {
+    if (!lista.some(x => x.toLowerCase() === email.toLowerCase())) lista.push(email);
+  };
   lerEmails_(avisos).forEach(e => {
+    if (!e.chave) {
+      incluir(globais, e.email);
+      return;
+    }
     let g = mapa.get(e.chave);
     if (!g) {
       g = { nome: e.nome, dest: [], copia: [] };
       mapa.set(e.chave, g);
     }
-    const alvo = e.tipo === 'D' ? g.dest : g.copia;
-    if (!alvo.some(x => x.toLowerCase() === e.email.toLowerCase())) alvo.push(e.email);
+    incluir(e.tipo === 'D' ? g.dest : g.copia, e.email);
   });
   mapa.forEach(g => {
-    g.copia = g.copia.filter(c => !g.dest.some(d => d.toLowerCase() === c.toLowerCase()));
+    globais.forEach(c => incluir(g.copia, c));
+    g.copiaSolic = g.copia.filter(c => !g.dest.some(d => d.toLowerCase() === c.toLowerCase()));
   });
   return mapa;
 }
@@ -647,7 +655,7 @@ function dispararSolicitacao(token, ids, ehReenvio) {
         pulados.push(`${g.nome}: sem destinatário cadastrado (${lista.length} item(ns))`);
         return;
       }
-      const necessario = g.dest.length + g.copia.length;
+      const necessario = g.dest.length + g.copiaSolic.length;
       if (necessario > cota) {
         pulados.push(`${g.nome}: cota diária de e-mails insuficiente`);
         return;
@@ -677,14 +685,14 @@ function dispararSolicitacao(token, ids, ehReenvio) {
     }
     concluidos.push(p);
     let copiasEnviadas = 0;
-    if (p.g.copia.length) {
+    if (p.g.copiaSolic.length) {
       try {
         MailApp.sendEmail({
-          to: p.g.copia.join(','),
+          to: p.g.copiaSolic.join(','),
           subject: assunto_(ehReenvio, p.g.nome, true),
           htmlBody: emailSolicitacao_(p.lista, mensagem, ehReenvio, '')
         });
-        copiasEnviadas = p.g.copia.length;
+        copiasEnviadas = p.g.copiaSolic.length;
       } catch (err) {
         pulados.push(`${p.g.nome}: enviado ao cliente, mas falhou o envio às cópias (${err.message})`);
       }
