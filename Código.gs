@@ -621,8 +621,12 @@ function dispararSolicitacao(token, ids, ehReenvio) {
     const semCadastro = new Map();
 
     const itensSel = lerItens_().filter(i => selecionados.has(i.id));
-    const aptos = ehReenvio ? itensSel.filter(i => i.status !== 'Não enviado') : itensSel;
-    if (aptos.length < itensSel.length) pulados.push(`${itensSel[0].desc}: ainda não foi enviado. Use "Disparar Selecionados".`);
+    const aptos = itensSel.filter(i => (i.status !== 'Não enviado') === ehReenvio);
+    if (aptos.length < itensSel.length) {
+      pulados.push(ehReenvio
+        ? `${itensSel[0].desc}: ainda não foi enviado. Use "Disparar Selecionados".`
+        : `${itensSel.length - aptos.length} item(ns) já enviado(s) ignorado(s). Para enviar de novo, use Reenviar no item.`);
+    }
 
     aptos.forEach(i => {
       const k = resolver(i.cliente);

@@ -147,9 +147,11 @@
       google.script.run.withSuccessHandler(aplicar).withFailureHandler(falha).obterDadosPainel(TOKEN);
     }
 
+    const selecionavel = i => i.destinatarios > 0 && tipoStatus(i) === 'novo';
+
     function aplicar(d) {
       dados = d;
-      const ids = new Set(d.itens.map(i => i.id));
+      const ids = new Set(d.itens.filter(selecionavel).map(i => i.id));
       Array.from(selecionados).forEach(id => { if (!ids.has(id)) selecionados.delete(id); });
       document.getElementById('infoSync').innerText = d.ultimaSync ? 'Última sincronização com a produção: ' + d.ultimaSync : 'Ainda não sincronizado com a produção.';
       const alerta = document.getElementById('alertaSync');
@@ -193,7 +195,7 @@
       container.innerHTML = nomes.map(nome => {
         const itens = grupos.get(nome);
         const ref = itens[0];
-        const selecionaveis = itens.filter(i => i.destinatarios > 0);
+        const selecionaveis = itens.filter(selecionavel);
         const todos = selecionaveis.length > 0 && selecionaveis.every(i => selecionados.has(i.id));
         const badge = nome === ''
           ? '<span class="badge bg-danger">Sem e-mail cadastrado na aba Emails</span>'
@@ -220,7 +222,7 @@
       return '<div class="item-card shadow-sm ' + classe + (pode ? '' : ' desabilitado') + '">' +
         '<div class="p-3 d-flex align-items-center justify-content-between">' +
           '<div class="form-check d-flex align-items-center gap-2 mb-0">' +
-            '<input class="form-check-input chk-item" type="checkbox" value="' + esc(item.id) + '" id="chk_' + esc(item.id) + '" style="transform: scale(1.3);"' + (selecionados.has(item.id) ? ' checked' : '') + (pode ? '' : ' disabled') + '>' +
+            '<input class="form-check-input chk-item" type="checkbox" value="' + esc(item.id) + '" id="chk_' + esc(item.id) + '" style="transform: scale(1.3);"' + (selecionados.has(item.id) ? ' checked' : '') + (selecionavel(item) ? '' : ' disabled') + '>' +
             '<label class="form-check-label ms-2" for="chk_' + esc(item.id) + '">' +
               '<span class="fw-bold fs-6">' + esc(item.descricao) + '</span><br>' +
               '<span class="text-muted fw-normal" style="font-size:12px;">' + detalhes + '</span>' +
@@ -248,14 +250,14 @@
         el.checked ? selecionados.add(el.value) : selecionados.delete(el.value);
         renderizar();
       } else if (el.classList.contains('chk-grupo')) {
-        visiveis().filter(i => i.grupo === el.dataset.grupo && i.destinatarios > 0)
+        visiveis().filter(i => i.grupo === el.dataset.grupo && selecionavel(i))
           .forEach(i => el.checked ? selecionados.add(i.id) : selecionados.delete(i.id));
         renderizar();
       }
     }
 
     function selecionarVisiveis() {
-      const alvo = visiveis().filter(i => i.destinatarios > 0);
+      const alvo = visiveis().filter(selecionavel);
       const todos = alvo.length > 0 && alvo.every(i => selecionados.has(i.id));
       alvo.forEach(i => todos ? selecionados.delete(i.id) : selecionados.add(i.id));
       renderizar();
