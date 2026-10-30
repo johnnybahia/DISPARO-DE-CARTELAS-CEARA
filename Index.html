@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .item-card { background: white; border-radius: 8px; border-left: 5px solid #ccc; margin-bottom: 12px; transition: 0.2s; }
+    .status-Respondido { border-left-color: #28a745; }
+    .status-Aguardando { border-left-color: #ffc107; }
+    .status-Reenviado { border-left-color: #dc3545; }
+    .resposta-box { background-color: #f8f9fa; border-top: 1px dashed #dee2e6; padding: 10px 15px; margin-top: 8px; border-radius: 0 0 8px 8px; }
+  </style>
+</head>
+<body class="p-3 p-md-4">
+  <div class="container" style="max-width: 900px;">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h3 class="mb-0 fw-bold">Solicitação de Cartelas</h3>
+        <small class="text-muted" id="destinatariosInfo">Carregando destinatários...</small>
+      </div>
+      <button class="btn btn-outline-secondary btn-sm" onclick="carregarDados()">🔄 Atualizar Respostas</button>
+    </div>
+
+    <!-- Cadastrar novo item rápido -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body py-2">
+        <div class="input-group">
+          <input type="text" id="novoItemInput" class="form-control" placeholder="Adicionar novo item à lista...">
+          <button class="btn btn-primary" onclick="adicionarItem()">+ Incluir Item</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Caixa de texto pré-definido e botões de disparo -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <label class="form-label fw-bold">Texto do E-mail de Disparo:</label>
+        <textarea id="textoEmail" class="form-control mb-3" rows="2">Olá! Segue abaixo a lista de itens que necessitamos de cartela. Por favor, clique no botão do e-mail para informar a disponibilidade de cada item.</textarea>
+        
+        <div class="d-flex gap-2 flex-wrap">
+          <button id="btnEnviar" class="btn btn-success fw-bold" onclick="enviarEmails(false)">
+            📧 Disparar Selecionados
+          </button>
+          <button id="btnReenviar" class="btn btn-danger fw-bold" onclick="enviarEmails(true)">
+            ⚠️ Solicitar Novo Retorno (Reenviar)
+          </button>
+          <button class="btn btn-light border ms-auto" onclick="selecionarTodos()">Marcar/Desmarcar Todos</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lista de Itens -->
+    <div id="listaItens">
+      <div class="text-center py-5 text-muted">Preparando abas e carregando itens da planilha...</div>
+    </div>
+
+  </div>
+
+  <script>
+    let itensAtuais = [];
+    let todosMarcados = false;
+
+    window.onload = carregarDados;
+
+    function carregarDados() {
+      document.getElementById('listaItens').innerHTML = '<div class="text-center py-4">Atualizando...</div>';
+      google.script.run.withSuccessHandler(renderizarPainel).obterDadosPainel();
+    }
+
+    function renderizarPainel(dados) {
+      itensAtuais = dados.itens;
+      const emailsTexto = dados.emails.map(e => `${e.nome} (${e.email})`).join(', ');
+      document.getElementById('destinatariosInfo').innerText = emailsTexto 
+        ? `Destinatários ativos: ${emailsTexto}` 
+        : '⚠️ Preencha os destinatários na aba "Emails" da planilha!';
+
+      const container = document.getElementById('listaItens');
+      if (itensAtuais.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">Nenhum item cadastrado na aba Itens.</div>';
+        return;
+      }
+
+      container.innerHTML = itensAtuais.map(item => {
+        const classeStatus = item.status.includes('Respondido') ? 'status-Respondido' :
+                             item.status.includes('Reenviado') ? 'status-Reenviado' :
+                             item.status.includes('Aguardando') ? 'status-Aguardando' : '';
+        
+        const badgeColor = item.status.includes('Respondido') ? 'bg-success' :
+                           item.status.includes('Reenviado') ? 'bg-danger' :
+                           item.status.includes('Aguardando') ? 'bg-warning text-dark' : 'bg-secondary';
+
+        return `
+          <div class="item-card shadow-sm ${classeStatus}">
+            <div class="p-3 d-flex align-items-center justify-content-between">
+              <div class="form-check d-flex align-items-center gap-2 mb-0">
+                <input class="form-check-input check-item" type="checkbox" value="${item.id}" id="chk_${item.id}" style="transform: scale(1.3);">
+                <label class="form-check-label fw-bold fs-6 ms-2" for="chk_${item.id}">
+                  ${item.nome} <span class="text-muted fw-normal" style="font-size:12px;">(#${item.id})</span>
+                </label>
+              </div>
+              <span class="badge ${badgeColor}">${item.status}</span>
+            </div>
+            
+            ${(item.resposta || item.observacao) ? `
+              <div class="resposta-box">
+                <div class="row align-items-center">
+                  <div class="col-md-9">
+                    <span class="fw-bold text-dark">Retorno:</span> 
+                    <span class="badge bg-primary me-2">${item.resposta || 'Sem opção'}</span>
+                    <span class="text-secondary">${item.observacao ? `💬 "${item.observacao}"` : '<em>Sem observações</em>'}</span>
+                  </div>
+                  <div class="col-md-3 text-md-end text-muted" style="font-size: 11px;">
+                    Atualizado em: ${item.data}
+                  </div>
+                </div>
+              </div>
+            ` : `
+              <div class="resposta-box text-muted" style="font-size: 13px;">
+                <em>Nenhum retorno registrado ainda para este item.</em>
+              </div>
+            `}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function adicionarItem() {
+      const input = document.getElementById('novoItemInput');
+      const nome = input.value.trim();
+      if (!nome) return;
+      input.disabled = true;
+      google.script.run.withSuccessHandler(dados => {
+        input.value = '';
+        input.disabled = false;
+        renderizarPainel(dados);
+      }).adicionarNovoItem(nome);
+    }
+
+    function selecionarTodos() {
+      todosMarcados = !todosMarcados;
+      document.querySelectorAll('.check-item').forEach(chk => chk.checked = todosMarcados);
+    }
+
+    function enviarEmails(ehReenvio) {
+      const selecionados = Array.from(document.querySelectorAll('.check-item:checked')).map(el => el.value);
+      if (selecionados.length === 0) {
+        alert('Selecione pelo menos um item na lista!');
+        return;
+      }
+
+      let msg = document.getElementById('textoEmail').value;
+      if (ehReenvio) {
+        const motivo = prompt('Deseja adicionar uma observação explicando por que está pedindo novo retorno?', 'Precisamos de uma revisão ou nova posição sobre os itens abaixo:');
+        if (motivo === null) return;
+        msg = motivo;
+      }
+
+      const btn = ehReenvio ? document.getElementById('btnReenviar') : document.getElementById('btnEnviar');
+      const textoOriginal = btn.innerText;
+      btn.disabled = true;
+      btn.innerText = 'Enviando e-mail...';
+
+      google.script.run
+        .withSuccessHandler(dados => {
+          btn.disabled = false;
+          btn.innerText = textoOriginal;
+          renderizarPainel(dados);
+          alert('E-mail disparado com sucesso!');
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          btn.innerText = textoOriginal;
+          alert('Atenção: ' + err.message);
+        })
+        .dispararSolicitacao(selecionados, msg, ehReenvio);
+    }
+  </script>
+</body>
+</html>
