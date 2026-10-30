@@ -44,6 +44,7 @@
     </div>
 
     <div id="alertaSync" class="alert alert-warning py-2 small" style="display: none;"></div>
+    <div id="alertaEmails" class="alert alert-warning py-2 small" style="display: none; white-space: pre-line;"></div>
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
@@ -154,6 +155,10 @@
       const alerta = document.getElementById('alertaSync');
       alerta.style.display = d.erroSync ? 'block' : 'none';
       alerta.innerText = d.erroSync ? '⚠️ Falha na última sincronização: ' + d.erroSync : '';
+      const avisos = d.avisosEmails || [];
+      const alertaEmails = document.getElementById('alertaEmails');
+      alertaEmails.style.display = avisos.length ? 'block' : 'none';
+      alertaEmails.innerText = avisos.length ? '⚠️ Linhas da aba Emails com problema:\n' + avisos.join('\n') : '';
       renderizar();
     }
 
@@ -268,8 +273,11 @@
       }
 
       const porGrupo = {};
-      sel.forEach(i => { porGrupo[i.grupo] = (porGrupo[i.grupo] || 0) + 1; });
-      const resumo = Object.keys(porGrupo).map(g => '• ' + g + ': ' + porGrupo[g] + ' item(ns)').join('\n');
+      sel.forEach(i => {
+        const g = porGrupo[i.grupo] || (porGrupo[i.grupo] = { n: 0, d: i.destinatarios, c: i.copias });
+        g.n++;
+      });
+      const resumo = Object.keys(porGrupo).map(g => '• ' + g + ': ' + porGrupo[g].n + ' item(ns) → ' + porGrupo[g].d + ' destinatário(s), ' + porGrupo[g].c + ' cópia(s)').join('\n');
       if (!confirm((ehReenvio ? 'REENVIAR' : 'Disparar') + ' solicitação para:\n' + resumo + '\n\nConfirmar envio?')) return;
 
       const btn = ehReenvio ? document.getElementById('btnReenviar') : document.getElementById('btnEnviar');

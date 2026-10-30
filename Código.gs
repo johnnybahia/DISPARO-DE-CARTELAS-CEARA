@@ -382,26 +382,33 @@ function lerItens_() {
     .map(r => ({ id: r[0], cliente: r[1], desc: r[2], cod: r[3], tam: r[4], oc: r[5], status: r[6] || 'Não enviado', resposta: r[7], obs: r[8], data: r[9] }));
 }
 
-function lerEmails_() {
+function lerEmails_(avisos) {
+  const aviso = avisos || [];
   const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Emails');
   const ult = aba.getLastRow();
   const linhas = ult > 1 ? aba.getRange(2, 1, ult - 1, 4).getDisplayValues() : [];
   const lista = [];
-  linhas.forEach(r => {
+  linhas.forEach((r, n) => {
     const cliente = r[0].trim();
+    const emails = r[2].split(/[;,\s]+/).filter(Boolean);
+    if (!cliente && !emails.length) return;
+    const onde = `Aba Emails, linha ${n + 2}: `;
     const tipoN = normalizar_(r[3]);
-    const tipo = (tipoN === '' || tipoN === 'DESTINATARIO') ? 'D' : (tipoN === 'COPIA' || tipoN === 'CC') ? 'C' : null;
-    if (!cliente || !tipo) return;
-    r[2].split(/[;,\s]+/).filter(Boolean).forEach(email => {
+    const tipo = (tipoN === '' || tipoN.indexOf('DEST') === 0) ? 'D' : (tipoN.indexOf('COP') === 0 || /^CC/.test(tipoN)) ? 'C' : null;
+    if (!cliente) { aviso.push(onde + 'Cliente vazio (destinatários e cópias são por cliente). Linha ignorada.'); return; }
+    if (!tipo) { aviso.push(`${onde}Tipo "${r[3]}" não reconhecido. Use Destinatário ou Cópia. Linha ignorada.`); return; }
+    if (!emails.length) { aviso.push(onde + 'sem e-mail. Linha ignorada.'); return; }
+    emails.forEach(email => {
       if (EMAIL_RE.test(email)) lista.push({ chave: normalizar_(cliente), nome: cliente, email, tipo });
+      else aviso.push(`${onde}e-mail "${email}" inválido. Ignorado.`);
     });
   });
   return lista;
 }
 
-function mapaClientes_() {
+function mapaClientes_(avisos) {
   const mapa = new Map();
-  lerEmails_().forEach(e => {
+  lerEmails_(avisos).forEach(e => {
     let g = mapa.get(e.chave);
     if (!g) {
       g = { nome: e.nome, dest: [], copia: [] };
@@ -460,7 +467,8 @@ function doGet(e) {
 // ============================================================================
 function montarDadosPainel_() {
   const props = PropertiesService.getScriptProperties();
-  const mapa = mapaClientes_();
+  const avisosEmails = [];
+  const mapa = mapaClientes_(avisosEmails);
   const resolver = criarResolvedor_(mapa);
   const itens = lerItens_().map(i => {
     const k = resolver(i.cliente);
@@ -483,6 +491,7 @@ function montarDadosPainel_() {
   });
   return {
     itens,
+    avisosEmails,
     ultimaSync: props.getProperty('ULTIMA_SYNC_TXT') || '',
     erroSync: props.getProperty('ERRO_SYNC') || ''
   };
@@ -516,22 +525,30 @@ function htmlEmail_(o) {
   const lin = o.linhas.map(l => '<tr>' + l.map((c, n) =>
     `<td style="padding: 10px; border-bottom: 1px solid #eee;${n === 0 ? ' font-weight: bold;' : ''}">${esc_(c)}</td>`).join('') + '</tr>').join('');
   const botao = o.link ? `
-        <div style="margin-top: 25px; text-align: center;">
-          <a href="${esc_(o.link)}" style="background-color: #28a745; color: white; padding: 14px 24px; text-decoration: none; font-weight: bold; border-radius: 6px; display: inline-block; font-size: 15px;">
-            Responder Itens e Adicionar Observações
-          </a>
-        </div>` : '';
+        <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin: 16px auto;">
+          <tr>
+            <td align="center" bgcolor="#28a745" style="border-radius: 8px; padding: 18px 40px;">
+              <a href="${esc_(o.link)}" style="color: #ffffff; font-size: 18px; font-weight: bold; text-decoration: none; display: block;">👉 CLIQUE AQUI PARA RESPONDER</a>
+            </td>
+          </tr>
+        </table>` : '';
+  const destaque = o.link ? `
+        <div style="background-color: #fff8e1; border: 2px solid #ffc107; border-radius: 8px; padding: 16px; margin: 0 0 20px; text-align: center;">
+          <div style="font-size: 16px; font-weight: bold; color: #7a5900;">⚠️ AÇÃO NECESSÁRIA: informe a situação de cada cartela no formulário</div>${botao}
+          <div style="font-size: 12px; color: #666;">Se o botão não abrir, copie e cole este link no navegador:<br>${esc_(o.link)}</div>
+        </div>` : (o.faixa ? `
+        <div style="background-color: #eceff1; border-radius: 8px; padding: 12px; margin: 0 0 20px; text-align: center; font-size: 14px; font-weight: bold; color: #455a64;">${esc_(o.faixa)}</div>` : '');
   return `
     <div style="font-family: Arial, sans-serif; max-width: 700px; color: #333; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
       <div style="background-color: ${o.cor}; color: white; padding: 16px;">
         <h2 style="margin: 0; font-size: 18px;">${esc_(o.titulo)}</h2>
       </div>
       <div style="padding: 20px;">
-        <p style="font-size: 15px; line-height: 1.5;">${esc_(o.mensagem).replace(/\n/g, '<br>')}</p>
+        <p style="font-size: 15px; line-height: 1.5;">${esc_(o.mensagem).replace(/\n/g, '<br>')}</p>${destaque}
         <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px;">
           <thead><tr style="background-color: #f7f7f7; text-align: left;">${cab}</tr></thead>
           <tbody>${lin}</tbody>
-        </table>${botao}
+        </table>${o.link ? botao : ''}
         <p style="font-size: 12px; color: #888; margin-top: 20px; text-align: center;">${esc_(o.rodape)}</p>
       </div>
     </div>`;
@@ -552,6 +569,7 @@ function emailSolicitacao_(itens, mensagem, ehReenvio, link) {
     cabecalhos,
     linhas,
     link,
+    faixa: link ? '' : '📋 CÓPIA INFORMATIVA: nenhuma ação necessária',
     rodape: link
       ? 'Clique no botão acima para selecionar a resposta pré-definida e preencher observações para cada item.'
       : 'Cópia informativa: nenhuma ação é necessária. As respostas também serão enviadas a você por e-mail.'
@@ -630,7 +648,7 @@ function dispararSolicitacao(token, ids, mensagemPersonalizada, ehReenvio) {
       return;
     }
     concluidos.push(p);
-    enviados.push({ cliente: p.g.nome, itens: p.lista.length, destinatarios: p.g.dest.length, copias: p.g.copia.length });
+    let copiasEnviadas = 0;
     if (p.g.copia.length) {
       try {
         MailApp.sendEmail({
@@ -638,10 +656,12 @@ function dispararSolicitacao(token, ids, mensagemPersonalizada, ehReenvio) {
           subject: assunto_(ehReenvio, p.g.nome, true),
           htmlBody: emailSolicitacao_(p.lista, mensagem, ehReenvio, '')
         });
+        copiasEnviadas = p.g.copia.length;
       } catch (err) {
         pulados.push(`${p.g.nome}: enviado ao cliente, mas falhou o envio às cópias (${err.message})`);
       }
     }
+    enviados.push({ cliente: p.g.nome, itens: p.lista.length, destinatarios: p.g.dest.length, copias: copiasEnviadas });
   });
 
   if (concluidos.length) {
