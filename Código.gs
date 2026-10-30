@@ -217,11 +217,11 @@ function definirSenhaUsuario() {
   if (pu.getSelectedButton() !== ui.Button.OK) return;
   const usuario = pu.getResponseText().trim();
   if (!usuario) return;
-  const ps = ui.prompt('Senha', 'Nova senha para "' + usuario + '" (mínimo 8 caracteres):', ui.ButtonSet.OK_CANCEL);
+  const ps = ui.prompt('Senha', 'Nova senha para "' + usuario + '" (mínimo 6 caracteres):', ui.ButtonSet.OK_CANCEL);
   if (ps.getSelectedButton() !== ui.Button.OK) return;
   const senha = ps.getResponseText();
-  if (senha.length < 8) {
-    ui.alert('A senha precisa ter pelo menos 8 caracteres.');
+  if (senha.length < 6) {
+    ui.alert('A senha precisa ter pelo menos 6 caracteres.');
     return;
   }
 
