@@ -606,6 +606,7 @@ function dispararSolicitacao(token, ids, ehReenvio) {
   const urlWebApp = ScriptApp.getService().getUrl();
   if (!urlWebApp) throw new Error('Publique o Web App antes de disparar.');
   ehReenvio = !!ehReenvio;
+  if (ehReenvio && ids.length !== 1) throw new Error('O reenvio é individual: use o botão Reenviar do item.');
   const mensagem = obterTexto_(ehReenvio ? TEXTO_REENVIO : TEXTO_DISPARO);
   const selecionados = new Set(ids.map(String));
   const dataAtual = agora_();
@@ -619,7 +620,11 @@ function dispararSolicitacao(token, ids, ehReenvio) {
     const grupos = new Map();
     const semCadastro = new Map();
 
-    lerItens_().filter(i => selecionados.has(i.id)).forEach(i => {
+    const itensSel = lerItens_().filter(i => selecionados.has(i.id));
+    const aptos = ehReenvio ? itensSel.filter(i => i.status !== 'Não enviado') : itensSel;
+    if (aptos.length < itensSel.length) pulados.push(`${itensSel[0].desc}: ainda não foi enviado. Use "Disparar Selecionados".`);
+
+    aptos.forEach(i => {
       const k = resolver(i.cliente);
       if (!k) {
         semCadastro.set(i.cliente, (semCadastro.get(i.cliente) || 0) + 1);
