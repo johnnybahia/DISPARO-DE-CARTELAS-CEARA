@@ -6,6 +6,7 @@
   <style>
     body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     .item-card { background: white; border-radius: 8px; border-left: 5px solid #ccc; margin-bottom: 12px; transition: 0.2s; }
+    .item-card.desabilitado { opacity: 0.6; }
     .status-Respondido { border-left-color: #28a745; }
     .status-Aguardando { border-left-color: #ffc107; }
     .status-Reenviado { border-left-color: #dc3545; }
@@ -13,139 +14,248 @@
   </style>
 </head>
 <body class="p-3 p-md-4">
-  <div class="container" style="max-width: 900px;">
-    
-    <div class="d-flex justify-content-between align-items-center mb-4">
+
+  <div id="telaLogin" class="container" style="max-width: 380px; display: none;">
+    <div class="card shadow-sm mt-5">
+      <div class="card-body">
+        <h4 class="fw-bold mb-3">Gestão de Cartelas</h4>
+        <form id="formLogin">
+          <input id="loginUsuario" class="form-control mb-2" placeholder="Usuário" autocomplete="username" required>
+          <input id="loginSenha" type="password" class="form-control mb-3" placeholder="Senha" autocomplete="current-password" required>
+          <div id="loginErro" class="text-danger small mb-2"></div>
+          <button id="btnLogin" type="submit" class="btn btn-primary w-100 fw-bold">Entrar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="telaPainel" class="container" style="max-width: 900px; display: none;">
+
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div>
         <h3 class="mb-0 fw-bold">Solicitação de Cartelas</h3>
-        <small class="text-muted" id="destinatariosInfo">Carregando destinatários...</small>
+        <small class="text-muted" id="infoSync"></small>
       </div>
-      <button class="btn btn-outline-secondary btn-sm" onclick="carregarDados()">🔄 Atualizar Respostas</button>
-    </div>
-
-    <!-- Cadastrar novo item rápido -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-body py-2">
-        <div class="input-group">
-          <input type="text" id="novoItemInput" class="form-control" placeholder="Adicionar novo item à lista...">
-          <button class="btn btn-primary" onclick="adicionarItem()">+ Incluir Item</button>
-        </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm" onclick="atualizar()">🔄 Atualizar Respostas</button>
+        <button class="btn btn-outline-primary btn-sm" id="btnSync" onclick="iniciar(true)">⬇️ Sincronizar Produção</button>
+        <button class="btn btn-outline-dark btn-sm" onclick="sair(false)">Sair</button>
       </div>
     </div>
 
-    <!-- Caixa de texto pré-definido e botões de disparo -->
-    <div class="card shadow-sm mb-4">
+    <div id="alertaSync" class="alert alert-warning py-2 small" style="display: none;"></div>
+
+    <div class="card shadow-sm mb-3">
       <div class="card-body">
         <label class="form-label fw-bold">Texto do E-mail de Disparo:</label>
         <textarea id="textoEmail" class="form-control mb-3" rows="2">Olá! Segue abaixo a lista de itens que necessitamos de cartela. Por favor, clique no botão do e-mail para informar a disponibilidade de cada item.</textarea>
-        
+
         <div class="d-flex gap-2 flex-wrap">
-          <button id="btnEnviar" class="btn btn-success fw-bold" onclick="enviarEmails(false)">
-            📧 Disparar Selecionados
-          </button>
-          <button id="btnReenviar" class="btn btn-danger fw-bold" onclick="enviarEmails(true)">
-            ⚠️ Solicitar Novo Retorno (Reenviar)
-          </button>
-          <button class="btn btn-light border ms-auto" onclick="selecionarTodos()">Marcar/Desmarcar Todos</button>
+          <button id="btnEnviar" class="btn btn-success fw-bold" onclick="enviarEmails(false)">📧 Disparar Selecionados</button>
+          <button id="btnReenviar" class="btn btn-danger fw-bold" onclick="enviarEmails(true)">⚠️ Solicitar Novo Retorno (Reenviar)</button>
+          <button class="btn btn-light border ms-auto" onclick="selecionarVisiveis()">Marcar/Desmarcar Visíveis</button>
         </div>
       </div>
     </div>
 
-    <!-- Lista de Itens -->
-    <div id="listaItens">
-      <div class="text-center py-5 text-muted">Preparando abas e carregando itens da planilha...</div>
+    <div class="row g-2 mb-3">
+      <div class="col-md-8"><input id="busca" class="form-control" placeholder="Buscar por item, cliente, ordem de compra ou código..."></div>
+      <div class="col-md-4">
+        <select id="filtroStatus" class="form-select">
+          <option value="">Todos os status</option>
+          <option value="novo">Não enviado</option>
+          <option value="aguardando">Aguardando resposta</option>
+          <option value="reenviado">Reenviado</option>
+          <option value="respondido">Respondido</option>
+        </select>
+      </div>
     </div>
 
+    <div id="listaItens"></div>
   </div>
 
   <script>
-    let itensAtuais = [];
-    let todosMarcados = false;
+    let TOKEN = lerToken();
+    let dados = { itens: [] };
+    const selecionados = new Set();
 
-    window.onload = carregarDados;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-    function carregarDados() {
-      document.getElementById('listaItens').innerHTML = '<div class="text-center py-4">Atualizando...</div>';
-      google.script.run.withSuccessHandler(renderizarPainel).obterDadosPainel();
+    function lerToken() { try { return sessionStorage.getItem('cartelas_token'); } catch (e) { return null; } }
+    function salvarToken(t) { try { t ? sessionStorage.setItem('cartelas_token', t) : sessionStorage.removeItem('cartelas_token'); } catch (e) {} }
+
+    function mostrar(tela) {
+      document.getElementById('telaLogin').style.display = tela === 'login' ? 'block' : 'none';
+      document.getElementById('telaPainel').style.display = tela === 'painel' ? 'block' : 'none';
     }
 
-    function renderizarPainel(dados) {
-      itensAtuais = dados.itens;
-      const emailsTexto = dados.emails.map(e => `${e.nome} (${e.email})`).join(', ');
-      document.getElementById('destinatariosInfo').innerText = emailsTexto 
-        ? `Destinatários ativos: ${emailsTexto}` 
-        : '⚠️ Preencha os destinatários na aba "Emails" da planilha!';
+    function falha(err) {
+      const m = String((err && err.message) || err).replace(/^(Error|Exception): /, '');
+      if (m.includes('SESSAO_EXPIRADA')) { sair(true); return; }
+      alert('Atenção: ' + m);
+    }
 
+    window.onload = () => {
+      document.getElementById('formLogin').addEventListener('submit', entrar);
+      document.getElementById('busca').addEventListener('input', renderizar);
+      document.getElementById('filtroStatus').addEventListener('change', renderizar);
+      document.getElementById('listaItens').addEventListener('change', aoMarcar);
+      if (TOKEN) { mostrar('painel'); iniciar(false); } else { mostrar('login'); }
+    };
+
+    function entrar(ev) {
+      ev.preventDefault();
+      const btn = document.getElementById('btnLogin');
+      const erro = document.getElementById('loginErro');
+      btn.disabled = true;
+      erro.innerText = '';
+      google.script.run
+        .withSuccessHandler(r => {
+          btn.disabled = false;
+          TOKEN = r.token;
+          salvarToken(TOKEN);
+          document.getElementById('loginSenha').value = '';
+          mostrar('painel');
+          iniciar(false);
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          erro.innerText = String(err.message || err).replace(/^(Error|Exception): /, '');
+        })
+        .login(document.getElementById('loginUsuario').value, document.getElementById('loginSenha').value);
+    }
+
+    function sair(expirou) {
+      if (TOKEN && !expirou) google.script.run.logout(TOKEN);
+      TOKEN = null;
+      salvarToken(null);
+      selecionados.clear();
+      dados = { itens: [] };
+      document.getElementById('loginErro').innerText = expirou ? 'Sessão expirada. Entre novamente.' : '';
+      mostrar('login');
+    }
+
+    function iniciar(forcar) {
+      document.getElementById('listaItens').innerHTML = '<div class="text-center py-4 text-muted">' + (forcar ? 'Sincronizando com a planilha de produção...' : 'Carregando itens...') + '</div>';
+      google.script.run.withSuccessHandler(aplicar).withFailureHandler(falha).sincronizarFonte(TOKEN, forcar);
+    }
+
+    function atualizar() {
+      document.getElementById('listaItens').innerHTML = '<div class="text-center py-4 text-muted">Atualizando...</div>';
+      google.script.run.withSuccessHandler(aplicar).withFailureHandler(falha).obterDadosPainel(TOKEN);
+    }
+
+    function aplicar(d) {
+      dados = d;
+      const ids = new Set(d.itens.map(i => i.id));
+      Array.from(selecionados).forEach(id => { if (!ids.has(id)) selecionados.delete(id); });
+      document.getElementById('infoSync').innerText = d.ultimaSync ? 'Última sincronização com a produção: ' + d.ultimaSync : 'Ainda não sincronizado com a produção.';
+      const alerta = document.getElementById('alertaSync');
+      alerta.style.display = d.erroSync ? 'block' : 'none';
+      alerta.innerText = d.erroSync ? '⚠️ Falha na última sincronização: ' + d.erroSync : '';
+      renderizar();
+    }
+
+    function tipoStatus(item) {
+      const s = item.status;
+      return s.includes('Respondido') ? 'respondido' : s.includes('Reenviado') ? 'reenviado' : s.includes('Aguardando') ? 'aguardando' : 'novo';
+    }
+
+    function visiveis() {
+      const q = norm(document.getElementById('busca').value.trim());
+      const st = document.getElementById('filtroStatus').value;
+      return dados.itens.filter(i =>
+        (!st || tipoStatus(i) === st) &&
+        (!q || norm([i.descricao, i.cliente, i.grupo, i.oc, i.codCliente, i.tamanho].join(' ')).includes(q)));
+    }
+
+    function renderizar() {
       const container = document.getElementById('listaItens');
-      if (itensAtuais.length === 0) {
-        container.innerHTML = '<div class="alert alert-info">Nenhum item cadastrado na aba Itens.</div>';
+      const lista = visiveis();
+      if (!lista.length) {
+        container.innerHTML = '<div class="alert alert-info">' + (dados.itens.length ? 'Nenhum item corresponde ao filtro.' : 'Nenhum item pendente de cartela na planilha de produção.') + '</div>';
         return;
       }
 
-      container.innerHTML = itensAtuais.map(item => {
-        const classeStatus = item.status.includes('Respondido') ? 'status-Respondido' :
-                             item.status.includes('Reenviado') ? 'status-Reenviado' :
-                             item.status.includes('Aguardando') ? 'status-Aguardando' : '';
-        
-        const badgeColor = item.status.includes('Respondido') ? 'bg-success' :
-                           item.status.includes('Reenviado') ? 'bg-danger' :
-                           item.status.includes('Aguardando') ? 'bg-warning text-dark' : 'bg-secondary';
+      const grupos = new Map();
+      lista.forEach(i => {
+        if (!grupos.has(i.grupo)) grupos.set(i.grupo, []);
+        grupos.get(i.grupo).push(i);
+      });
+      const nomes = Array.from(grupos.keys()).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
 
-        return `
-          <div class="item-card shadow-sm ${classeStatus}">
-            <div class="p-3 d-flex align-items-center justify-content-between">
-              <div class="form-check d-flex align-items-center gap-2 mb-0">
-                <input class="form-check-input check-item" type="checkbox" value="${item.id}" id="chk_${item.id}" style="transform: scale(1.3);">
-                <label class="form-check-label fw-bold fs-6 ms-2" for="chk_${item.id}">
-                  ${item.nome} <span class="text-muted fw-normal" style="font-size:12px;">(#${item.id})</span>
-                </label>
-              </div>
-              <span class="badge ${badgeColor}">${item.status}</span>
-            </div>
-            
-            ${(item.resposta || item.observacao) ? `
-              <div class="resposta-box">
-                <div class="row align-items-center">
-                  <div class="col-md-9">
-                    <span class="fw-bold text-dark">Retorno:</span> 
-                    <span class="badge bg-primary me-2">${item.resposta || 'Sem opção'}</span>
-                    <span class="text-secondary">${item.observacao ? `💬 "${item.observacao}"` : '<em>Sem observações</em>'}</span>
-                  </div>
-                  <div class="col-md-3 text-md-end text-muted" style="font-size: 11px;">
-                    Atualizado em: ${item.data}
-                  </div>
-                </div>
-              </div>
-            ` : `
-              <div class="resposta-box text-muted" style="font-size: 13px;">
-                <em>Nenhum retorno registrado ainda para este item.</em>
-              </div>
-            `}
-          </div>
-        `;
+      container.innerHTML = nomes.map(nome => {
+        const itens = grupos.get(nome);
+        const ref = itens[0];
+        const selecionaveis = itens.filter(i => i.destinatarios > 0);
+        const todos = selecionaveis.length > 0 && selecionaveis.every(i => selecionados.has(i.id));
+        const badge = nome === ''
+          ? '<span class="badge bg-danger">Sem e-mail cadastrado na aba Emails</span>'
+          : ref.destinatarios === 0
+            ? '<span class="badge bg-danger">Sem destinatário cadastrado</span>'
+            : '<span class="badge bg-light text-dark border">' + ref.destinatarios + ' destinatário(s) · ' + ref.copias + ' cópia(s)</span>';
+
+        return '<div class="mb-4">' +
+          '<div class="d-flex align-items-center gap-2 mb-2">' +
+            '<input type="checkbox" class="form-check-input chk-grupo mt-0" data-grupo="' + esc(nome) + '"' + (todos ? ' checked' : '') + (selecionaveis.length ? '' : ' disabled') + '>' +
+            '<h6 class="fw-bold mb-0">' + esc(nome || 'Clientes sem cadastro de e-mail') + '</h6>' + badge +
+            '<span class="text-muted small ms-auto">' + itens.length + ' item(ns)</span>' +
+          '</div>' + itens.map(cartaoItem).join('') + '</div>';
       }).join('');
     }
 
-    function adicionarItem() {
-      const input = document.getElementById('novoItemInput');
-      const nome = input.value.trim();
-      if (!nome) return;
-      input.disabled = true;
-      google.script.run.withSuccessHandler(dados => {
-        input.value = '';
-        input.disabled = false;
-        renderizarPainel(dados);
-      }).adicionarNovoItem(nome);
+    function cartaoItem(item) {
+      const tipo = tipoStatus(item);
+      const classe = { respondido: 'status-Respondido', reenviado: 'status-Reenviado', aguardando: 'status-Aguardando', novo: '' }[tipo];
+      const cor = { respondido: 'bg-success', reenviado: 'bg-danger', aguardando: 'bg-warning text-dark', novo: 'bg-secondary' }[tipo];
+      const pode = item.destinatarios > 0;
+      const detalhes = [item.cliente, item.tamanho && 'Tam: ' + item.tamanho, item.oc && 'OC: ' + item.oc, item.codCliente && 'Cód: ' + item.codCliente].filter(Boolean).map(esc).join(' · ');
+
+      return '<div class="item-card shadow-sm ' + classe + (pode ? '' : ' desabilitado') + '">' +
+        '<div class="p-3 d-flex align-items-center justify-content-between">' +
+          '<div class="form-check d-flex align-items-center gap-2 mb-0">' +
+            '<input class="form-check-input chk-item" type="checkbox" value="' + esc(item.id) + '" id="chk_' + esc(item.id) + '" style="transform: scale(1.3);"' + (selecionados.has(item.id) ? ' checked' : '') + (pode ? '' : ' disabled') + '>' +
+            '<label class="form-check-label ms-2" for="chk_' + esc(item.id) + '">' +
+              '<span class="fw-bold fs-6">' + esc(item.descricao) + '</span><br>' +
+              '<span class="text-muted fw-normal" style="font-size:12px;">' + detalhes + '</span>' +
+            '</label>' +
+          '</div>' +
+          '<span class="badge ' + cor + '">' + esc(item.status) + '</span>' +
+        '</div>' +
+        (item.resposta || item.observacao
+          ? '<div class="resposta-box"><div class="row align-items-center">' +
+              '<div class="col-md-9"><span class="fw-bold text-dark">Retorno:</span> ' +
+                '<span class="badge bg-primary me-2">' + esc(item.resposta || 'Sem opção') + '</span>' +
+                '<span class="text-secondary">' + (item.observacao ? '💬 "' + esc(item.observacao) + '"' : '<em>Sem observações</em>') + '</span></div>' +
+              '<div class="col-md-3 text-md-end text-muted" style="font-size: 11px;">Atualizado em: ' + esc(item.data) + '</div>' +
+            '</div></div>'
+          : '<div class="resposta-box text-muted" style="font-size: 13px;"><em>Nenhum retorno registrado ainda para este item.</em></div>') +
+      '</div>';
     }
 
-    function selecionarTodos() {
-      todosMarcados = !todosMarcados;
-      document.querySelectorAll('.check-item').forEach(chk => chk.checked = todosMarcados);
+    function aoMarcar(ev) {
+      const el = ev.target;
+      if (el.classList.contains('chk-item')) {
+        el.checked ? selecionados.add(el.value) : selecionados.delete(el.value);
+        renderizar();
+      } else if (el.classList.contains('chk-grupo')) {
+        visiveis().filter(i => i.grupo === el.dataset.grupo && i.destinatarios > 0)
+          .forEach(i => el.checked ? selecionados.add(i.id) : selecionados.delete(i.id));
+        renderizar();
+      }
+    }
+
+    function selecionarVisiveis() {
+      const alvo = visiveis().filter(i => i.destinatarios > 0);
+      const todos = alvo.length > 0 && alvo.every(i => selecionados.has(i.id));
+      alvo.forEach(i => todos ? selecionados.delete(i.id) : selecionados.add(i.id));
+      renderizar();
     }
 
     function enviarEmails(ehReenvio) {
-      const selecionados = Array.from(document.querySelectorAll('.check-item:checked')).map(el => el.value);
-      if (selecionados.length === 0) {
+      const sel = dados.itens.filter(i => selecionados.has(i.id));
+      if (!sel.length) {
         alert('Selecione pelo menos um item na lista!');
         return;
       }
@@ -157,24 +267,34 @@
         msg = motivo;
       }
 
+      const porGrupo = {};
+      sel.forEach(i => { porGrupo[i.grupo] = (porGrupo[i.grupo] || 0) + 1; });
+      const resumo = Object.keys(porGrupo).map(g => '• ' + g + ': ' + porGrupo[g] + ' item(ns)').join('\n');
+      if (!confirm((ehReenvio ? 'REENVIAR' : 'Disparar') + ' solicitação para:\n' + resumo + '\n\nConfirmar envio?')) return;
+
       const btn = ehReenvio ? document.getElementById('btnReenviar') : document.getElementById('btnEnviar');
       const textoOriginal = btn.innerText;
       btn.disabled = true;
-      btn.innerText = 'Enviando e-mail...';
+      btn.innerText = 'Enviando e-mails...';
 
       google.script.run
-        .withSuccessHandler(dados => {
+        .withSuccessHandler(r => {
           btn.disabled = false;
           btn.innerText = textoOriginal;
-          renderizarPainel(dados);
-          alert('E-mail disparado com sucesso!');
+          selecionados.clear();
+          aplicar(r.dados);
+          let texto = r.enviados.length
+            ? 'Enviado:\n' + r.enviados.map(e => '• ' + e.cliente + ': ' + e.itens + ' item(ns) → ' + e.destinatarios + ' destinatário(s), ' + e.copias + ' cópia(s)').join('\n')
+            : 'Nenhum e-mail enviado.';
+          if (r.pulados.length) texto += '\n\nNão enviado:\n' + r.pulados.map(p => '• ' + p).join('\n');
+          alert(texto);
         })
         .withFailureHandler(err => {
           btn.disabled = false;
           btn.innerText = textoOriginal;
-          alert('Atenção: ' + err.message);
+          falha(err);
         })
-        .dispararSolicitacao(selecionados, msg, ehReenvio);
+        .dispararSolicitacao(TOKEN, Array.from(selecionados), msg, ehReenvio);
     }
   </script>
 </body>
