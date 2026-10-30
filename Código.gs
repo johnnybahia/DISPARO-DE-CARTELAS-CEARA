@@ -532,11 +532,7 @@ function htmlEmail_(o) {
             </td>
           </tr>
         </table>` : '';
-  const destaque = o.link ? `
-        <div style="background-color: #fff8e1; border: 2px solid #ffc107; border-radius: 8px; padding: 16px; margin: 0 0 20px; text-align: center;">
-          <div style="font-size: 16px; font-weight: bold; color: #7a5900;">⚠️ AÇÃO NECESSÁRIA: informe a situação de cada cartela no formulário</div>${botao}
-          <div style="font-size: 12px; color: #666;">Se o botão não abrir, copie e cole este link no navegador:<br>${esc_(o.link)}</div>
-        </div>` : (o.faixa ? `
+  const destaque = o.link ? botao : (o.faixa ? `
         <div style="background-color: #eceff1; border-radius: 8px; padding: 12px; margin: 0 0 20px; text-align: center; font-size: 14px; font-weight: bold; color: #455a64;">${esc_(o.faixa)}</div>` : '');
   return `
     <div style="font-family: Arial, sans-serif; max-width: 700px; color: #333; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
