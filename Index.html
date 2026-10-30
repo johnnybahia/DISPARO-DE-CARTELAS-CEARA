@@ -48,9 +48,6 @@
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <label class="form-label fw-bold">Texto do E-mail de Disparo:</label>
-        <textarea id="textoEmail" class="form-control mb-3" rows="2">Olá! Segue abaixo a lista de itens que necessitamos de cartela. Por favor, clique no botão do e-mail para informar a disponibilidade de cada item.</textarea>
-
         <div class="d-flex gap-2 flex-wrap">
           <button id="btnEnviar" class="btn btn-success fw-bold" onclick="enviarEmails(false)">📧 Disparar Selecionados</button>
           <button id="btnReenviar" class="btn btn-danger fw-bold" onclick="enviarEmails(true)">⚠️ Solicitar Novo Retorno (Reenviar)</button>
@@ -265,13 +262,6 @@
         return;
       }
 
-      let msg = document.getElementById('textoEmail').value;
-      if (ehReenvio) {
-        const motivo = prompt('Deseja adicionar uma observação explicando por que está pedindo novo retorno?', 'Precisamos de uma revisão ou nova posição sobre os itens abaixo:');
-        if (motivo === null) return;
-        msg = motivo;
-      }
-
       const porGrupo = {};
       sel.forEach(i => {
         const g = porGrupo[i.grupo] || (porGrupo[i.grupo] = { n: 0, d: i.destinatarios, c: i.copias });
@@ -302,7 +292,7 @@
           btn.innerText = textoOriginal;
           falha(err);
         })
-        .dispararSolicitacao(TOKEN, Array.from(selecionados), msg, ehReenvio);
+        .dispararSolicitacao(TOKEN, Array.from(selecionados), ehReenvio);
     }
   </script>
 </body>

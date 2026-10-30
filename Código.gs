@@ -25,9 +25,16 @@ const CABECALHOS = {
   Emails: ['Cliente', 'Nome', 'Email', 'Tipo'],
   Usuarios: ['Usuario', 'Salt', 'SenhaHash', 'Ativo'],
   Envios: ['Token', 'Cliente', 'IDs', 'Data', 'Tipo', 'Usuario'],
-  Historico: ['Data', 'Evento', 'Cliente', 'ID', 'Item', 'Resposta', 'Observacao', 'Origem']
+  Historico: ['Data', 'Evento', 'Cliente', 'ID', 'Item', 'Resposta', 'Observacao', 'Origem'],
+  Config: ['Parametro', 'Texto']
 };
-const CORES = { Itens: '#d9ead3', Emails: '#cfe2f3', Usuarios: '#f4cccc', Envios: '#ead1dc', Historico: '#e6e6e6' };
+const CORES = { Itens: '#d9ead3', Emails: '#cfe2f3', Usuarios: '#f4cccc', Envios: '#ead1dc', Historico: '#e6e6e6', Config: '#fff2cc' };
+const TEXTO_DISPARO = 'Texto do disparo';
+const TEXTO_REENVIO = 'Texto do reenvio';
+const TEXTOS_PADRAO = [
+  [TEXTO_DISPARO, 'Olá! Segue abaixo a lista de itens que necessitamos de cartela. Por favor, clique no botão do e-mail para informar a disponibilidade de cada item.'],
+  [TEXTO_REENVIO, 'Precisamos de uma revisão ou nova posição sobre os itens abaixo:']
+];
 
 function configurarPlanilhaAutomaticamente() {
   CacheService.getScriptCache().remove('abas_ok');
@@ -50,6 +57,7 @@ function garantirAbas_() {
     if (aba.getLastRow() === 0) {
       aba.getRange(1, 1, 1, cab.length).setValues([cab]).setFontWeight('bold').setBackground(CORES[nome]);
       aba.setFrozenRows(1);
+      if (nome === 'Config') gravar_(aba, 2, 1, TEXTOS_PADRAO);
     }
   });
 
@@ -577,13 +585,28 @@ function assunto_(ehReenvio, nome, copia) {
   return (copia ? '[CÓPIA] ' : '') + base + ' - ' + nome.replace(/[\r\n]+/g, ' ');
 }
 
-function dispararSolicitacao(token, ids, mensagemPersonalizada, ehReenvio) {
+function obterTexto_(parametro) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let aba = ss.getSheetByName('Config');
+  if (!aba) {
+    CacheService.getScriptCache().remove('abas_ok');
+    garantirAbas_();
+    aba = ss.getSheetByName('Config');
+  }
+  const ult = aba.getLastRow();
+  const linhas = ult > 1 ? aba.getRange(2, 1, ult - 1, 2).getDisplayValues() : [];
+  const reg = linhas.find(r => normalizar_(r[0]) === normalizar_(parametro) && r[1].trim());
+  const padrao = TEXTOS_PADRAO.find(p => p[0] === parametro)[1];
+  return (reg ? reg[1].trim() : padrao).slice(0, 2000);
+}
+
+function dispararSolicitacao(token, ids, ehReenvio) {
   const usuario = exigirSessao_(token);
   if (!Array.isArray(ids) || !ids.length) throw new Error('Selecione pelo menos um item.');
   const urlWebApp = ScriptApp.getService().getUrl();
   if (!urlWebApp) throw new Error('Publique o Web App antes de disparar.');
   ehReenvio = !!ehReenvio;
-  const mensagem = String(mensagemPersonalizada || '').slice(0, 2000);
+  const mensagem = obterTexto_(ehReenvio ? TEXTO_REENVIO : TEXTO_DISPARO);
   const selecionados = new Set(ids.map(String));
   const dataAtual = agora_();
   const evento = ehReenvio ? 'Reenvio' : 'Disparo';
