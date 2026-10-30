@@ -18,7 +18,10 @@
   <div id="telaLogin" class="container" style="max-width: 380px; display: none;">
     <div class="card shadow-sm mt-5">
       <div class="card-body">
-        <h4 class="fw-bold mb-3">Gestão de Cartelas</h4>
+        <div class="text-center mb-3">
+          <img src="https://i.ibb.co/FGGjdsM/LOGO-MARFIM.jpg" alt="Logo Marfim" style="height: 58px;" onerror="this.style.display='none'">
+          <h4 class="fw-bold mt-2 mb-0">Gestão de Cartelas</h4>
+        </div>
         <form id="formLogin">
           <input id="loginUsuario" class="form-control mb-2" placeholder="Usuário" autocomplete="username" required>
           <input id="loginSenha" type="password" class="form-control mb-3" placeholder="Senha" autocomplete="current-password" required>
@@ -32,9 +35,12 @@
   <div id="telaPainel" class="container" style="max-width: 900px; display: none;">
 
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <div>
-        <h3 class="mb-0 fw-bold">Solicitação de Cartelas</h3>
-        <small class="text-muted" id="infoSync"></small>
+      <div class="d-flex align-items-center gap-3">
+        <img src="https://i.ibb.co/FGGjdsM/LOGO-MARFIM.jpg" alt="Logo Marfim" style="height: 60px; width: auto;" onerror="this.style.display='none'">
+        <div>
+          <h3 class="mb-0 fw-bold">Solicitação de Cartelas</h3>
+          <small class="text-muted" id="infoSync"></small>
+        </div>
       </div>
       <div class="d-flex gap-2">
         <button class="btn btn-outline-secondary btn-sm" onclick="atualizar()">🔄 Atualizar Respostas</button>
