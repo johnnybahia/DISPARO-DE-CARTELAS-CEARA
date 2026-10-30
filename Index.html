@@ -48,12 +48,8 @@
 
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <label class="form-label fw-bold">Texto do E-mail de Disparo:</label>
-        <textarea id="textoEmail" class="form-control mb-3" rows="2">Olá! Segue abaixo a lista de itens que necessitamos de cartela. Por favor, clique no botão do e-mail para informar a disponibilidade de cada item.</textarea>
-
         <div class="d-flex gap-2 flex-wrap">
-          <button id="btnEnviar" class="btn btn-success fw-bold" onclick="enviarEmails(false)">📧 Disparar Selecionados</button>
-          <button id="btnReenviar" class="btn btn-danger fw-bold" onclick="enviarEmails(true)">⚠️ Solicitar Novo Retorno (Reenviar)</button>
+          <button id="btnEnviar" class="btn btn-success fw-bold" onclick="enviarEmails()">📧 Disparar Selecionados</button>
           <button class="btn btn-light border ms-auto" onclick="selecionarVisiveis()">Marcar/Desmarcar Visíveis</button>
         </div>
       </div>
@@ -102,6 +98,10 @@
       document.getElementById('busca').addEventListener('input', renderizar);
       document.getElementById('filtroStatus').addEventListener('change', renderizar);
       document.getElementById('listaItens').addEventListener('change', aoMarcar);
+      document.getElementById('listaItens').addEventListener('click', ev => {
+        const btn = ev.target.closest('.btn-reenviar');
+        if (btn) reenviarItem(btn.dataset.id, btn);
+      });
       if (TOKEN) { mostrar('painel'); iniciar(false); } else { mostrar('login'); }
     };
 
@@ -147,9 +147,11 @@
       google.script.run.withSuccessHandler(aplicar).withFailureHandler(falha).obterDadosPainel(TOKEN);
     }
 
+    const selecionavel = i => i.destinatarios > 0 && tipoStatus(i) === 'novo';
+
     function aplicar(d) {
       dados = d;
-      const ids = new Set(d.itens.map(i => i.id));
+      const ids = new Set(d.itens.filter(selecionavel).map(i => i.id));
       Array.from(selecionados).forEach(id => { if (!ids.has(id)) selecionados.delete(id); });
       document.getElementById('infoSync').innerText = d.ultimaSync ? 'Última sincronização com a produção: ' + d.ultimaSync : 'Ainda não sincronizado com a produção.';
       const alerta = document.getElementById('alertaSync');
@@ -193,7 +195,7 @@
       container.innerHTML = nomes.map(nome => {
         const itens = grupos.get(nome);
         const ref = itens[0];
-        const selecionaveis = itens.filter(i => i.destinatarios > 0);
+        const selecionaveis = itens.filter(selecionavel);
         const todos = selecionaveis.length > 0 && selecionaveis.every(i => selecionados.has(i.id));
         const badge = nome === ''
           ? '<span class="badge bg-danger">Sem e-mail cadastrado na aba Emails</span>'
@@ -220,13 +222,16 @@
       return '<div class="item-card shadow-sm ' + classe + (pode ? '' : ' desabilitado') + '">' +
         '<div class="p-3 d-flex align-items-center justify-content-between">' +
           '<div class="form-check d-flex align-items-center gap-2 mb-0">' +
-            '<input class="form-check-input chk-item" type="checkbox" value="' + esc(item.id) + '" id="chk_' + esc(item.id) + '" style="transform: scale(1.3);"' + (selecionados.has(item.id) ? ' checked' : '') + (pode ? '' : ' disabled') + '>' +
+            '<input class="form-check-input chk-item" type="checkbox" value="' + esc(item.id) + '" id="chk_' + esc(item.id) + '" style="transform: scale(1.3);"' + (selecionados.has(item.id) ? ' checked' : '') + (selecionavel(item) ? '' : ' disabled') + '>' +
             '<label class="form-check-label ms-2" for="chk_' + esc(item.id) + '">' +
               '<span class="fw-bold fs-6">' + esc(item.descricao) + '</span><br>' +
               '<span class="text-muted fw-normal" style="font-size:12px;">' + detalhes + '</span>' +
             '</label>' +
           '</div>' +
-          '<span class="badge ' + cor + '">' + esc(item.status) + '</span>' +
+          '<div class="d-flex align-items-center gap-2">' +
+            '<span class="badge ' + cor + '">' + esc(item.status) + '</span>' +
+            (tipo !== 'novo' && pode ? '<button class="btn btn-outline-danger btn-sm btn-reenviar" data-id="' + esc(item.id) + '">🔁 Reenviar</button>' : '') +
+          '</div>' +
         '</div>' +
         (item.resposta || item.observacao
           ? '<div class="resposta-box"><div class="row align-items-center">' +
@@ -245,31 +250,24 @@
         el.checked ? selecionados.add(el.value) : selecionados.delete(el.value);
         renderizar();
       } else if (el.classList.contains('chk-grupo')) {
-        visiveis().filter(i => i.grupo === el.dataset.grupo && i.destinatarios > 0)
+        visiveis().filter(i => i.grupo === el.dataset.grupo && selecionavel(i))
           .forEach(i => el.checked ? selecionados.add(i.id) : selecionados.delete(i.id));
         renderizar();
       }
     }
 
     function selecionarVisiveis() {
-      const alvo = visiveis().filter(i => i.destinatarios > 0);
+      const alvo = visiveis().filter(selecionavel);
       const todos = alvo.length > 0 && alvo.every(i => selecionados.has(i.id));
       alvo.forEach(i => todos ? selecionados.delete(i.id) : selecionados.add(i.id));
       renderizar();
     }
 
-    function enviarEmails(ehReenvio) {
+    function enviarEmails() {
       const sel = dados.itens.filter(i => selecionados.has(i.id));
       if (!sel.length) {
         alert('Selecione pelo menos um item na lista!');
         return;
-      }
-
-      let msg = document.getElementById('textoEmail').value;
-      if (ehReenvio) {
-        const motivo = prompt('Deseja adicionar uma observação explicando por que está pedindo novo retorno?', 'Precisamos de uma revisão ou nova posição sobre os itens abaixo:');
-        if (motivo === null) return;
-        msg = motivo;
       }
 
       const porGrupo = {};
@@ -278,18 +276,27 @@
         g.n++;
       });
       const resumo = Object.keys(porGrupo).map(g => '• ' + g + ': ' + porGrupo[g].n + ' item(ns) → ' + porGrupo[g].d + ' destinatário(s), ' + porGrupo[g].c + ' cópia(s)').join('\n');
-      if (!confirm((ehReenvio ? 'REENVIAR' : 'Disparar') + ' solicitação para:\n' + resumo + '\n\nConfirmar envio?')) return;
+      if (!confirm('Disparar solicitação para:\n' + resumo + '\n\nConfirmar envio?')) return;
+      executarEnvio(sel.map(i => i.id), false, document.getElementById('btnEnviar'));
+    }
 
-      const btn = ehReenvio ? document.getElementById('btnReenviar') : document.getElementById('btnEnviar');
+    function reenviarItem(id, btn) {
+      const item = dados.itens.find(i => i.id === id);
+      if (!item) return;
+      if (!confirm('REENVIAR solicitação:\n• ' + item.descricao + ' (' + item.grupo + ')\n→ ' + item.destinatarios + ' destinatário(s), ' + item.copias + ' cópia(s)\n\nConfirmar envio?')) return;
+      executarEnvio([id], true, btn);
+    }
+
+    function executarEnvio(ids, ehReenvio, btn) {
       const textoOriginal = btn.innerText;
       btn.disabled = true;
-      btn.innerText = 'Enviando e-mails...';
+      btn.innerText = 'Enviando...';
 
       google.script.run
         .withSuccessHandler(r => {
           btn.disabled = false;
           btn.innerText = textoOriginal;
-          selecionados.clear();
+          if (!ehReenvio) selecionados.clear();
           aplicar(r.dados);
           let texto = r.enviados.length
             ? 'Enviado:\n' + r.enviados.map(e => '• ' + e.cliente + ': ' + e.itens + ' item(ns) → ' + e.destinatarios + ' destinatário(s), ' + e.copias + ' cópia(s)').join('\n')
@@ -302,7 +309,7 @@
           btn.innerText = textoOriginal;
           falha(err);
         })
-        .dispararSolicitacao(TOKEN, Array.from(selecionados), msg, ehReenvio);
+        .dispararSolicitacao(TOKEN, ids, ehReenvio);
     }
   </script>
 </body>
