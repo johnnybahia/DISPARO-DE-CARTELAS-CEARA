@@ -10,6 +10,7 @@ const MAX_TENTATIVAS = 5;
 const BLOQUEIO_SEGUNDOS = 15 * 60;
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const TOKEN_ENVIO_RE = /^[a-f0-9]{32}$/;
+const LOGO_URL = 'https://i.ibb.co/FGGjdsM/LOGO-MARFIM.jpg';
 
 const COLS_FONTE = {
   cartela: 'CARTELA',
@@ -552,6 +553,9 @@ function htmlEmail_(o) {
         <div style="background-color: #eceff1; border-radius: 8px; padding: 12px; margin: 0 0 20px; text-align: center; font-size: 14px; font-weight: bold; color: #455a64;">${esc_(o.faixa)}</div>` : '');
   return `
     <div style="font-family: Arial, sans-serif; max-width: 700px; color: #333; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+      <div style="background-color: #ffffff; text-align: center; padding: 14px 16px; border-bottom: 1px solid #eee;">
+        <img src="${LOGO_URL}" alt="Marfim" height="58" style="height: 58px; width: auto; border: 0;">
+      </div>
       <div style="background-color: ${o.cor}; color: white; padding: 16px;">
         <h2 style="margin: 0; font-size: 18px;">${esc_(o.titulo)}</h2>
       </div>
