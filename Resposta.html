@@ -22,44 +22,56 @@
   </div>
 
   <script>
-    const idsRecebidos = "<?= ids ?>";
+    const tokenEnvio = "<?= t ?>";
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
     window.onload = () => {
-      google.script.run.withSuccessHandler(montarFormulario).obterItensPorIds(idsRecebidos);
+      if (!tokenEnvio) { montarFormulario({ invalido: true }); return; }
+      google.script.run
+        .withSuccessHandler(montarFormulario)
+        .withFailureHandler(err => montarFormulario({ erro: String(err.message || err) }))
+        .obterItensPorToken(tokenEnvio);
     };
 
     function montarFormulario(dados) {
       const container = document.getElementById('corpoFormulario');
+
+      if (dados.invalido || dados.erro) {
+        container.innerHTML = '<div class="alert alert-warning">' + (dados.invalido ? 'Link inválido ou expirado. Solicite um novo e-mail.' : 'Não foi possível carregar os itens. Tente novamente.') + '</div>';
+        return;
+      }
       const itens = dados.itens;
-      const opcoesPreDefinidas = dados.opcoes;
+      const opcoes = dados.opcoes;
 
       if (!itens || itens.length === 0) {
-        container.innerHTML = '<div class="alert alert-warning">Nenhum item encontrado para este link.</div>';
+        container.innerHTML = '<div class="alert alert-success">Todos os itens deste envio já foram resolvidos. Nenhuma ação necessária.</div>';
         return;
       }
 
-      let html = `<form id="formRespostas" onsubmit="salvarTudo(event)">`;
+      let html = '<form id="formRespostas" onsubmit="salvarTudo(event)">';
 
       itens.forEach((item, index) => {
+        const detalhes = [item.cliente, item.tamanho && 'Tam: ' + item.tamanho, item.oc && 'OC: ' + item.oc, item.codCliente && 'Cód: ' + item.codCliente].filter(Boolean).map(esc).join(' · ');
         html += `
           <div class="card card-item shadow-sm mb-3">
             <div class="card-body">
-              <h6 class="fw-bold mb-2">${index + 1}. ${item.nome} <span class="text-muted fw-normal">(#${item.id})</span></h6>
-              
-              ${item.resposta ? `<div class="alert alert-secondary py-1 px-2 small mb-2">Último retorno enviado: <strong>${item.resposta}</strong> ${item.observacao ? `(${item.observacao})` : ''}</div>` : ''}
+              <h6 class="fw-bold mb-1">${index + 1}. ${esc(item.nome)}</h6>
+              <div class="text-muted small mb-2">${detalhes}</div>
+
+              ${item.resposta ? `<div class="alert alert-secondary py-1 px-2 small mb-2">Último retorno enviado: <strong>${esc(item.resposta)}</strong> ${item.observacao ? `(${esc(item.observacao)})` : ''}</div>` : ''}
 
               <div class="row g-2">
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-secondary mb-1">Situação da Cartela *</label>
-                  <select class="form-select form-select-sm resp-select" data-id="${item.id}" required>
+                  <select class="form-select form-select-sm resp-select" data-id="${esc(item.id)}" required>
                     <option value="">-- Selecione uma resposta --</option>
-                    ${opcoesPreDefinidas.map(op => `<option value="${op}" ${item.resposta === op ? 'selected' : ''}>${op}</option>`).join('')}
+                    ${opcoes.map(op => `<option value="${esc(op)}" ${item.resposta === op ? 'selected' : ''}>${esc(op)}</option>`).join('')}
                   </select>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-secondary mb-1">Observação / Prazo / Rastreio</label>
-                  <input type="text" class="form-control form-control-sm resp-obs" data-id="${item.id}" 
-                         placeholder="Digite detalhes ou observações..." value="${item.observacao || ''}">
+                  <input type="text" maxlength="500" class="form-control form-control-sm resp-obs" data-id="${esc(item.id)}"
+                         placeholder="Digite detalhes ou observações..." value="${esc(item.observacao)}">
                 </div>
               </div>
             </div>
@@ -96,14 +108,21 @@
         });
       });
 
-      google.script.run.withSuccessHandler(() => {
-        document.getElementById('corpoFormulario').innerHTML = `
-          <div class="text-center py-5">
-            <h3 class="text-success fw-bold mb-2">✔️ Respostas enviadas com sucesso!</h3>
-            <p class="text-muted">A planilha e o painel do solicitante já foram atualizados automaticamente.</p>
-          </div>
-        `;
-      }).salvarRespostasFornecedor(payload);
+      google.script.run
+        .withSuccessHandler(() => {
+          document.getElementById('corpoFormulario').innerHTML = `
+            <div class="text-center py-5">
+              <h3 class="text-success fw-bold mb-2">✔️ Respostas enviadas com sucesso!</h3>
+              <p class="text-muted">A planilha e o painel do solicitante já foram atualizados automaticamente.</p>
+            </div>
+          `;
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          btn.innerText = '✅ Enviar Respostas';
+          alert('Não foi possível gravar: ' + String(err.message || err).replace(/^(Error|Exception): /, ''));
+        })
+        .salvarRespostasFornecedor(tokenEnvio, payload);
     }
   </script>
 </body>
