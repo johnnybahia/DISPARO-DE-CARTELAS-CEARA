@@ -426,7 +426,7 @@ function mapaClientes_(avisos) {
     if (!alvo.some(x => x.toLowerCase() === e.email.toLowerCase())) alvo.push(e.email);
   });
   mapa.forEach(g => {
-    g.copia = g.copia.filter(c => !g.dest.some(d => d.toLowerCase() === c.toLowerCase()));
+    g.copiaSolic = g.copia.filter(c => !g.dest.some(d => d.toLowerCase() === c.toLowerCase()));
   });
   return mapa;
 }
@@ -647,7 +647,7 @@ function dispararSolicitacao(token, ids, ehReenvio) {
         pulados.push(`${g.nome}: sem destinatário cadastrado (${lista.length} item(ns))`);
         return;
       }
-      const necessario = g.dest.length + g.copia.length;
+      const necessario = g.dest.length + g.copiaSolic.length;
       if (necessario > cota) {
         pulados.push(`${g.nome}: cota diária de e-mails insuficiente`);
         return;
@@ -677,14 +677,14 @@ function dispararSolicitacao(token, ids, ehReenvio) {
     }
     concluidos.push(p);
     let copiasEnviadas = 0;
-    if (p.g.copia.length) {
+    if (p.g.copiaSolic.length) {
       try {
         MailApp.sendEmail({
-          to: p.g.copia.join(','),
+          to: p.g.copiaSolic.join(','),
           subject: assunto_(ehReenvio, p.g.nome, true),
           htmlBody: emailSolicitacao_(p.lista, mensagem, ehReenvio, '')
         });
-        copiasEnviadas = p.g.copia.length;
+        copiasEnviadas = p.g.copiaSolic.length;
       } catch (err) {
         pulados.push(`${p.g.nome}: enviado ao cliente, mas falhou o envio às cópias (${err.message})`);
       }
