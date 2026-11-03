@@ -10,6 +10,9 @@
     .status-Respondido { border-left-color: #28a745; }
     .status-Aguardando { border-left-color: #ffc107; }
     .status-Reenviado { border-left-color: #dc3545; }
+    .modal-fundo { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 1050; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-caixa { background: white; border-radius: 12px; max-width: 560px; width: 100%; max-height: 90vh; overflow: auto; padding: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3); }
+    .modal-lista { max-height: 200px; overflow: auto; border: 1px solid #dee2e6; border-radius: 8px; padding: 8px 12px; background: #f8f9fa; font-size: 13px; }
     .resposta-box { background-color: #f8f9fa; border-top: 1px dashed #dee2e6; padding: 10px 15px; margin-top: 8px; border-radius: 0 0 8px 8px; }
   </style>
 </head>
@@ -77,6 +80,18 @@
     <div id="listaItens"></div>
   </div>
 
+  <div id="modalConfirma" class="modal-fundo" role="dialog" aria-modal="true">
+    <div class="modal-caixa">
+      <h5 id="modalTitulo" class="fw-bold mb-3"></h5>
+      <div id="modalAviso" class="alert alert-warning mb-3"></div>
+      <div id="modalResumo" class="mb-3"></div>
+      <div class="d-flex justify-content-end gap-2">
+        <button id="modalCancelar" type="button" class="btn btn-outline-secondary">Cancelar</button>
+        <button id="modalConfirmar" type="button" class="btn btn-success fw-bold">Confirmar envio</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let TOKEN = lerToken();
     let dados = { itens: [] };
@@ -104,6 +119,8 @@
       document.getElementById('busca').addEventListener('input', renderizar);
       document.getElementById('filtroStatus').addEventListener('change', renderizar);
       document.getElementById('listaItens').addEventListener('change', aoMarcar);
+      document.addEventListener('keydown', ev => { if (ev.key === 'Escape') fecharConfirmacao(); });
+      document.getElementById('modalConfirma').addEventListener('click', ev => { if (ev.target === ev.currentTarget) fecharConfirmacao(); });
       document.getElementById('listaItens').addEventListener('click', ev => {
         const btn = ev.target.closest('.btn-reenviar');
         if (btn) reenviarItem(btn.dataset.id, btn);
@@ -276,21 +293,44 @@
         return;
       }
 
-      const porGrupo = {};
-      sel.forEach(i => {
-        const g = porGrupo[i.grupo] || (porGrupo[i.grupo] = { n: 0, d: i.destinatarios, c: i.copias });
-        g.n++;
-      });
-      const resumo = Object.keys(porGrupo).map(g => '• ' + g + ': ' + porGrupo[g].n + ' item(ns) → ' + porGrupo[g].d + ' destinatário(s), ' + porGrupo[g].c + ' cópia(s)').join('\n');
-      if (!confirm('Disparar solicitação para:\n' + resumo + '\n\nConfirmar envio?')) return;
-      executarEnvio(sel.map(i => i.id), false, document.getElementById('btnEnviar'));
+      abrirConfirmacao(sel, false, () => executarEnvio(sel.map(i => i.id), false, document.getElementById('btnEnviar')));
     }
 
     function reenviarItem(id, btn) {
       const item = dados.itens.find(i => i.id === id);
       if (!item) return;
-      if (!confirm('REENVIAR solicitação:\n• ' + item.descricao + ' (' + item.grupo + ')\n→ ' + item.destinatarios + ' destinatário(s), ' + item.copias + ' cópia(s)\n\nConfirmar envio?')) return;
-      executarEnvio([id], true, btn);
+      abrirConfirmacao([item], true, () => executarEnvio([id], true, btn));
+    }
+
+    function abrirConfirmacao(itens, ehReenvio, aoConfirmar) {
+      const plural = itens.length > 1;
+      const grupos = new Map();
+      itens.forEach(i => {
+        if (!grupos.has(i.grupo)) grupos.set(i.grupo, []);
+        grupos.get(i.grupo).push(i);
+      });
+
+      document.getElementById('modalTitulo').innerText = ehReenvio ? 'Confirmar reenvio da solicitação' : 'Confirmar solicitação de cartela';
+      document.getElementById('modalAviso').innerHTML =
+        '<div class="fw-bold">⚠️ Foi verificado se não recebemos ' + (plural ? 'as cartelas' : 'a cartela') + ' antes desta solicitação ou se ' + (plural ? 'já estão' : 'já está') + ' a caminho?</div>' +
+        '<div class="small mt-1">Se ' + (plural ? 'já chegaram ou foram enviadas' : 'já chegou ou foi enviada') + ', o pedido ao cliente é desnecessário.</div>';
+      document.getElementById('modalResumo').innerHTML = Array.from(grupos.entries()).map(([nome, lista]) =>
+        '<div class="fw-bold mt-2">' + esc(nome) + ' <span class="text-muted fw-normal">→ ' + lista[0].destinatarios + ' destinatário(s), ' + lista[0].copias + ' cópia(s)</span></div>' +
+        '<div class="modal-lista">' + lista.map(i => '• ' + esc(i.descricao) + (i.tamanho ? ' · ' + esc(i.tamanho) : '') + (i.oc ? ' · OC ' + esc(i.oc) : '')).join('<br>') + '</div>'
+      ).join('');
+
+      const ok = document.getElementById('modalConfirmar');
+      ok.className = 'btn fw-bold ' + (ehReenvio ? 'btn-danger' : 'btn-success');
+      ok.innerText = ehReenvio ? 'Confirmar reenvio' : 'Confirmar envio';
+      ok.onclick = () => { fecharConfirmacao(); aoConfirmar(); };
+      const cancelar = document.getElementById('modalCancelar');
+      cancelar.onclick = fecharConfirmacao;
+      document.getElementById('modalConfirma').style.display = 'flex';
+      cancelar.focus();
+    }
+
+    function fecharConfirmacao() {
+      document.getElementById('modalConfirma').style.display = 'none';
     }
 
     function executarEnvio(ids, ehReenvio, btn) {
