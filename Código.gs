@@ -10,6 +10,7 @@ const MAX_TENTATIVAS = 5;
 const BLOQUEIO_SEGUNDOS = 15 * 60;
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const TOKEN_ENVIO_RE = /^[a-f0-9]{32}$/;
+const HISTORICO_MAX = 6;
 const LOGO_URL = 'https://i.ibb.co/FGGjdsM/LOGO-MARFIM.jpg';
 
 const COLS_FONTE = {
@@ -141,6 +142,34 @@ function comLock_(fn) {
 function gravar_(aba, linha, coluna, valores) {
   if (!valores.length) return;
   aba.getRange(linha, coluna, valores.length, valores[0].length).setNumberFormat('@').setValues(valores);
+}
+
+function lerHistoricoPorId_(ids) {
+  const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Historico');
+  const ult = aba.getLastRow();
+  const mapa = new Map();
+  if (ult < 2) return mapa;
+  const alvo = new Set(ids);
+  aba.getRange(2, 1, ult - 1, 8).getDisplayValues().forEach(r => {
+    if (!alvo.has(r[3])) return;
+    if (r[1] === 'Encerrado') {
+      mapa.delete(r[3]);
+      return;
+    }
+    if (!mapa.has(r[3])) mapa.set(r[3], []);
+    mapa.get(r[3]).push({ data: r[0], evento: r[1], resposta: r[5], obs: r[6] });
+  });
+  return mapa;
+}
+
+function linhasHistorico_(lista) {
+  if (!lista || !lista.length) return null;
+  const linhas = lista.map(h => h.evento === 'Resposta'
+    ? `${h.data} - Resposta: ${h.resposta}${h.obs ? ' - "' + h.obs + '"' : ''}`
+    : h.evento === 'Reenvio' ? `${h.data} - Nova solicitação enviada (reenvio)` : `${h.data} - Solicitação enviada`);
+  return linhas.length > HISTORICO_MAX
+    ? [`... (${linhas.length - HISTORICO_MAX} registro(s) mais antigo(s))`].concat(linhas.slice(-HISTORICO_MAX))
+    : linhas;
 }
 
 function registrarHistorico_(linhas) {
@@ -334,6 +363,7 @@ function sincronizarItens_() {
   if (JSON.stringify(atuais) !== JSON.stringify(novas)) {
     if (ult > 1) aba.getRange(2, 1, ult - 1, 10).clearContent();
     gravar_(aba, 2, 1, novas);
+    registrarHistorico_(atuais.filter(r => !idsNovos.has(r[0])).map(r => [agora_(), 'Encerrado', r[1], r[0], r[2], r[7], r[8], 'Sincronização']));
   }
 
   const props = PropertiesService.getScriptProperties();
@@ -539,8 +569,14 @@ function sincronizarFonte(token, forcar) {
 // ============================================================================
 function htmlEmail_(o) {
   const cab = o.cabecalhos.map(h => `<th style="padding: 10px; border-bottom: 2px solid #ddd;">${esc_(h)}</th>`).join('');
-  const lin = o.linhas.map(l => '<tr>' + l.map((c, n) =>
-    `<td style="padding: 10px; border-bottom: 1px solid #eee;${n === 0 ? ' font-weight: bold;' : ''}">${esc_(c)}</td>`).join('') + '</tr>').join('');
+  const lin = o.linhas.map((l, idx) => {
+    const h = o.historicos && o.historicos[idx];
+    const borda = h ? 'none' : '1px solid #eee';
+    const linha = '<tr>' + l.map((c, n) =>
+      `<td style="padding: 10px; border-bottom: ${borda};${n === 0 ? ' font-weight: bold;' : ''}">${esc_(c)}</td>`).join('') + '</tr>';
+    const hist = h ? `<tr><td colspan="${o.cabecalhos.length}" style="padding: 8px 10px 12px 24px; border-bottom: 1px solid #eee; background-color: #fafafa; font-size: 12px; color: #555;"><div style="font-weight: bold; margin-bottom: 4px;">Histórico anterior</div>${h.map(esc_).join('<br>')}</td></tr>` : '';
+    return linha + hist;
+  }).join('');
   const botao = o.link ? `
         <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin: 16px auto;">
           <tr>
@@ -584,6 +620,7 @@ function emailSolicitacao_(itens, mensagem, ehReenvio, link) {
     mensagem,
     cabecalhos,
     linhas,
+    historicos: itens.map(i => linhasHistorico_(i.hist)),
     link,
     faixa: link ? '' : '📋 CÓPIA INFORMATIVA: nenhuma ação necessária',
     rodape: link
@@ -634,6 +671,8 @@ function dispararSolicitacao(token, ids, ehReenvio) {
 
     const itensSel = lerItens_().filter(i => selecionados.has(i.id));
     const aptos = itensSel.filter(i => (i.status !== 'Não enviado') === ehReenvio);
+    const historico = lerHistoricoPorId_(aptos.map(i => i.id));
+    aptos.forEach(i => { i.hist = historico.get(i.id); });
     if (aptos.length < itensSel.length) {
       pulados.push(ehReenvio
         ? `${itensSel[0].desc}: ainda não foi enviado. Use "Disparar Selecionados".`
@@ -763,6 +802,7 @@ function salvarRespostasFornecedor(tokenEnvio, listaRespostas) {
   if (!Array.isArray(listaRespostas) || listaRespostas.length > 500) throw new Error('Dados inválidos.');
   const alteradas = [];
   let grupo = '';
+  let historicoAnterior = new Map();
 
   comLock_(() => {
     const envio = buscarEnvio_(tokenEnvio);
@@ -793,14 +833,15 @@ function salvarRespostasFornecedor(tokenEnvio, listaRespostas) {
     });
 
     gravar_(aba, 2, 7, bloco.map(r => r.slice(6, 10)));
+    historicoAnterior = lerHistoricoPorId_(alteradas.map(r => r[0]));
     registrarHistorico_(alteradas.map(r => [dataAtual, 'Resposta', grupo, r[0], r[2], r[7], r[8], 'Formulário']));
   });
 
-  if (alteradas.length) notificarCopiasResposta_(grupo, alteradas);
+  if (alteradas.length) notificarCopiasResposta_(grupo, alteradas, historicoAnterior);
   return { salvos: alteradas.length };
 }
 
-function notificarCopiasResposta_(grupo, linhasItens) {
+function notificarCopiasResposta_(grupo, linhasItens, historico) {
   try {
     const g = mapaClientes_().get(normalizar_(grupo));
     if (!g || !g.copia.length) return;
@@ -813,6 +854,7 @@ function notificarCopiasResposta_(grupo, linhasItens) {
         mensagem: `${grupo} respondeu à solicitação de cartelas em ${linhasItens[0][9]}.`,
         cabecalhos: ['Item', 'Cliente / Filial', 'Tamanho', 'Ordem de compra', 'Cód. Cliente', 'Resposta', 'Observação'],
         linhas: linhasItens.map(r => [r[2], r[1], r[4], r[5], r[3], r[7], r[8] || '-']),
+        historicos: linhasItens.map(r => linhasHistorico_(historico.get(r[0]))),
         link: '',
         rodape: 'Cópia informativa: nenhuma ação é necessária.'
       })
