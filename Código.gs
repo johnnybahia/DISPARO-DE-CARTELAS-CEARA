@@ -1,6 +1,8 @@
 // ============================================================================
 // 1. CONFIGURAÇÃO E ESTRUTURA DA PLANILHA
 // ============================================================================
+const VERSAO = '1.0.0';
+const VERSAO_DATA = '12/11/2026';
 const FONTE_ID = '1GtYG4Ahy5XJyJjE37S27u8RyELdRkct8nDAVGIBRI-w';
 const FONTE_ABA = ''; // vazio = detecta a aba pelo cabeçalho
 const FUSO = 'America/Fortaleza';
@@ -91,6 +93,7 @@ function garantirAbas_() {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Cartelas')
     .addItem('Definir usuário e senha', 'definirSenhaUsuario')
+    .addItem('Desbloquear usuário', 'desbloquearUsuario')
     .addItem('Sincronizar com planilha de produção', 'sincronizarAgora')
     .addItem('Ativar sincronização horária', 'instalarGatilhoSincronizacao')
     .addToUi();
@@ -227,6 +230,16 @@ function login(usuario, senha) {
   const token = novoToken_(2);
   cache.put('sess_' + token, reg[0].trim(), SESSAO_SEGUNDOS);
   return { token, usuario: reg[0].trim() };
+}
+
+function desbloquearUsuario() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.prompt('Desbloquear usuário', 'Nome do usuário bloqueado:', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const u = r.getResponseText().trim().toLowerCase();
+  if (!u) return;
+  CacheService.getScriptCache().remove('falhas_' + sha256_(u).slice(0, 32));
+  ui.alert('Usuário "' + u + '" liberado para novas tentativas de login.');
 }
 
 function logout(token) {
@@ -503,7 +516,10 @@ function doGet(e) {
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
 
-  return HtmlService.createTemplateFromFile('Index')
+  const tplIndex = HtmlService.createTemplateFromFile('Index');
+  tplIndex.versao = VERSAO;
+  tplIndex.versaoData = VERSAO_DATA;
+  return tplIndex
     .evaluate()
     .setTitle('Gestão e Solicitação de Cartelas')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
